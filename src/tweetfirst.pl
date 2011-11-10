@@ -1,5 +1,6 @@
 #!/usr/bin/perl -w
 
+use warnings;
 use strict;
 use File::Slurp;
 use File::HomeDir;
@@ -29,6 +30,9 @@ closedir(DIR);
 
 my $firstfile = shift(@files);
 my $tweet = File::Slurp::read_file("$srcdir/$firstfile");
+
+print "tweeting $firstfile:\n$tweet\n";
+
 
 my $homedir = File::HomeDir->my_home;
 my $consumer_key = File::Slurp::read_file($homedir."/.twitter/consumer_key");
