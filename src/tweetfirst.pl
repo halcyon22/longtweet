@@ -4,6 +4,7 @@ use warnings;
 use strict;
 use File::Slurp;
 use File::HomeDir;
+use File::Copy;
 use Net::Twitter::Lite;
 
 if (!$ARGV[0]) {
@@ -16,7 +17,7 @@ USAGE
 my $srcdir = shift(@ARGV);
 
 opendir(DIR, $srcdir)
-	or die "$! \"$srcdir\"";
+	or die "opendir failed: $!";
 
 # list files sorted by numbers just before the .tweet extension
 my @files = 
@@ -28,11 +29,11 @@ my @files =
 
 closedir(DIR);
 
-my $firstfile = shift(@files);
-my $tweet = File::Slurp::read_file("$srcdir/$firstfile");
+my $firstfile = shift(@files)
+	or die "No files left in $srcdir\n";
 
-print "tweeting $firstfile:\n$tweet\n";
-
+my $tweetfile = "$srcdir/$firstfile";
+my $tweet = File::Slurp::read_file($tweetfile);
 
 my $homedir = File::HomeDir->my_home;
 my $consumer_key = File::Slurp::read_file($homedir."/.twitter/consumer_key");
@@ -47,12 +48,25 @@ my $twitter = Net::Twitter::Lite->new(
 	access_token_secret => $access_token_secret
 );
 
+# move the file prior to the update attempt to avoid a future duplicate tweet in the event of a failed move
+my $donedir = "$srcdir/done";
+my $donefile = "$donedir/$firstfile";
+
+mkdir($donedir)
+	or die "mkdir failed: $!\n"
+	unless -e $donedir;
+
+File::Copy::move($tweetfile, $donefile)
+	or die "move failed: $!\n";
+
+print "tweeting $firstfile:\n$tweet\n";
 eval {
 	$twitter->update($tweet)
 };
 if ($@) {
-	warn "Update failed: $@\n";
-}
-else {
-	# move $firstfile somewhere else
+	# move the file back
+	File::Copy::move($donefile, $tweetfile)
+		or die "move faild: $!\n";
+
+	die "Update failed: $@\n";
 }
