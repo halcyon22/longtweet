@@ -7,6 +7,7 @@ use warnings;
 use strict;
 use File::Path;
 use File::Slurp;
+use Digest::MD5 qw(md5);
 
 if (!$ARGV[0]) {
 	die <<USAGE;
@@ -20,6 +21,7 @@ $filename =~ /^(.+)\..*$/;
 my $prefix = $1 
 	or die "Couldn't parse $filename\n";
 my $outfiletmpl = $prefix."___NUM__.tweet";
+my $checksums = {};
 
 #print "filename=$filename\n";
 
@@ -62,7 +64,7 @@ while (<INPUT>) {
 				}
 
 				# next to last tweet for this paragraph
-				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount);
+				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
 				$characters = "";
 
 				while (@words) {
@@ -70,11 +72,11 @@ while (<INPUT>) {
 				}
 
 				# last tweet for this paragraph
-				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount);
+				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
 				$characters = ""; 
 			}
 			else {
-				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount);
+				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
 				$characters = "";
 			}
 		}
@@ -83,7 +85,7 @@ while (<INPUT>) {
 	#print "after\n";
 
 	if ($characters) {
-		$outfilecount = tofile($characters, $outfiletmpl, $outfilecount);
+		$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
 	}
 
 	$characters = "";
@@ -92,13 +94,30 @@ while (<INPUT>) {
 close(INPUT);
 
 sub tofile {
-	my ($content, $tmpl, $count) = @_;
-	$tmpl =~ s/__NUM__/$count/;
+	my ($content, $tmpl, $count, $checksums) = @_;
+	my $filename = $tmpl;
+	$filename =~ s/__NUM__/$count/;
 
-	#print "Writing $tmpl\n$content\n";
+	#print "Writing $filename\n$content\n";
 
-	write_file($tmpl, "$content\n\n\n")
-		or die "Couldn't write $tmpl: $!\n";
+	write_file($filename, "$content\n\n\n")
+		or die "Couldn't write $filename: $!\n";
+
+	# do checksum stuff
+	open(FILE, $filename)
+	        or die "Couldn't open $filename: $!\n";
+	binmode(FILE);
+
+        my $ctx = Digest::MD5->new;
+        $ctx->addfile(*FILE);
+	my $digest = $ctx->hexdigest();
+
+	if (exists $checksums->{$digest}) {
+		print "$filename is a duplicate of ".$checksums->{$digest}."\n";
+	}
+	else {
+		$checksums->{$digest} = $filename;
+	}
 
 	return ++$count;
 }
