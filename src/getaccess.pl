@@ -9,7 +9,6 @@ use File::Slurp;
 use File::HomeDir;
 use Net::Twitter::Lite;
 use File::Spec;
-use Data::Dumper;
 
 # register an app to get a consumer key and consumer secret
 my $homedir = File::HomeDir->my_home;
