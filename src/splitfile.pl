@@ -9,6 +9,10 @@ use File::Path;
 use File::Slurp;
 use Digest::MD5 qw(md5);
 
+use constant MAXLEN => 140;
+use constant MINLEN => 70;
+use constant DISTANCE_FROM_PREVIOUS => 144;
+
 if (!$ARGV[0]) {
 	die <<USAGE;
 Usage $0 <filename>
@@ -23,8 +27,6 @@ my $prefix = $1
 my $outfiletmpl = $prefix."___NUM__.tweet";
 my $checksums = {};
 
-#print "filename=$filename\n";
-
 open(INPUT, $filename) 
 	or die "Couldn't open $filename: $!\n";
 
@@ -34,25 +36,20 @@ while (<INPUT>) {
 	my $line = $_;
 	chomp($line);
 
-	#print "$line\n";
-
 	my @words = split(/\s+/, $line);
 
-	while (@words and length($characters) < 140) {
+	while (@words and length($characters) < MAXLEN) {
 		my $prev = $characters;
 		my $word = shift(@words);
 
 		$characters .= "$word ";
 
-		#print "$characters >>".length($characters)."\n";
-
-		if (length($characters) >= 140) {
+		if (length($characters) >= MAXLEN) {
 			$characters = $prev;
 			unshift(@words, $word);
 
 			# next tweet will be too short; even out the last two
-			if (length(join(' ', @words)) < 70) {
-				#print "next one is short; evening out\n";
+			if (length(join(' ', @words)) < MINLEN) {
 
 				$characters .= join(' ', @words);
 				my $length = length($characters);
@@ -70,19 +67,13 @@ while (<INPUT>) {
 				while (@words) {
 					$characters .= shift(@words)." ";
 				}
+			}
 
-				# last tweet for this paragraph
-				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
-				$characters = ""; 
-			}
-			else {
-				$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
-				$characters = "";
-			}
+			# last tweet for this paragraph
+			$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
+			$characters = ""; 
 		}
 	}
-
-	#print "after\n";
 
 	if ($characters) {
 		$outfilecount = tofile($characters, $outfiletmpl, $outfilecount, $checksums);
@@ -103,22 +94,46 @@ sub tofile {
 	write_file($filename, "$content\n\n\n")
 		or die "Couldn't write $filename: $!\n";
 
-	# do checksum stuff
-	open(FILE, $filename)
-	        or die "Couldn't open $filename: $!\n";
-	binmode(FILE);
-
-        my $ctx = Digest::MD5->new;
-        $ctx->addfile(*FILE);
-	my $digest = $ctx->hexdigest();
-
-	if (exists $checksums->{$digest}) {
-		print "$filename is a duplicate of ".$checksums->{$digest}."\n";
-	}
-	else {
-		$checksums->{$digest} = $filename;
-	}
+	compareChecksum($filename, $checksums);
 
 	return ++$count;
 }
 
+sub compareChecksum {
+	my ($filename, $checksums) = @_;
+
+        open(FILE, $filename)
+                or die "Couldn't open $filename: $!\n";
+        binmode(FILE);
+
+        my $ctx = Digest::MD5->new;
+        $ctx->addfile(*FILE);
+        my $digest = $ctx->hexdigest();
+
+        if (exists $checksums->{$digest}
+			and checkDistance($filename, $checksums, $digest)) {
+                print "$filename is a duplicate of ".$checksums->{$digest}." and within ".DISTANCE_FROM_PREVIOUS." tweets.\n";
+        }
+
+        $checksums->{$digest} = $filename;
+}
+
+sub checkDistance {
+	my ($filename, $checksums, $digest) = @_;
+
+	my $prev = $checksums->{$digest};
+	$prev = getTweetNum($prev);
+
+	my $curr = getTweetNum($filename);
+
+	return ($curr - $prev) >= DISTANCE_FROM_PREVIOUS;
+}
+
+sub getTweetNum {
+	my ($filename) = @_;
+
+	$filename =~ /(\d+)\.tweet/;
+	$filename = $1 or die "Couldn't parse $filename\n";
+
+	return $filename;
+}
